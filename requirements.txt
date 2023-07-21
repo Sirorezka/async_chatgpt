@@ -1,0 +1,6 @@
+# versions that I've been used for testing
+# openai==0.27.8
+# aiohttp==3.8.5
+
+openai
+aiohttp
