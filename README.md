@@ -1,5 +1,5 @@
 ## Description
-batch async requests to chatgpt with rerun on exception
+Batch async requests to chatgpt completion API with rerun of failed tasks (on getting RateLimitError exception).
 
 
 ## Prerequisites
@@ -25,6 +25,7 @@ print(resp)
 
 ## How retry works
 All messages/tasks are send as API requests. Tasks that were rejected by sever will be retried in 30 seconds. This process will continue until all tasks will be completed without exceptions.
+
 ![image](img/retry_example.png)
 
 
