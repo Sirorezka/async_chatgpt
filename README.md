@@ -1,5 +1,5 @@
 ## Description
-Batch async requests to chatgpt completion API with rerun of failed tasks (on getting RateLimitError exception).
+Batch async requests to chatgpt completion API with rerun of failed tasks (for example when part of the tasks failed because 'RateLimitError' exception).
 
 
 ## Prerequisites
