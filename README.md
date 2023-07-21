@@ -16,6 +16,13 @@ Check example in `run.py`:
 python run.py
 ```
 
+For running in Jupyter use following snippet:
+```python
+chats = [messages1, messages2, messages3]
+resp = await async_completion.multiple_completions(chats)
+print(resp)
+```
+
 ## How retry works
 All messages/tasks are send as API requests. Tasks that were rejected by sever will be retried in 30 seconds. This process will continue until all tasks will be completed without exceptions.
 ![image](img/retry_example.png)
