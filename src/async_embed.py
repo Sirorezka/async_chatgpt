@@ -6,44 +6,11 @@ from typing import List, Dict
 import time
 import inspect
 
+
 from . import logs_utils
 
 logger = logs_utils.logger
 ExceptionStats = logs_utils.ExceptionStats
-
-
-async def create_chat_completion(
-    messages: List[Dict[str, str]], model_type: str = "gpt-3.5-turbo", **kwgs
-):
-    """Async call to OpenAI chat completions."""
-    response = await openai.ChatCompletion.acreate(
-        messages=messages, model=model_type, **kwgs
-    )
-    return response
-
-
-def _func_task(
-    msg: List[Dict[str, str]],
-    model_type: str = "gpt-3.5-turbo",
-    functions=None,
-    temperature=None,
-):
-    """Fix issues with arguments passed to different chatGPT models
-
-    - Takes care of the problem when you can't pass None instead of functions
-    """
-
-    kwgs = {
-        "messages": msg,
-        "model_type": model_type,
-    }
-    if functions is not None and len(functions) > 0:
-        kwgs["functions"] = functions
-
-    if temperature is not None and temperature >= 0:
-        kwgs["temperature"] = temperature
-
-    return create_chat_completion(**kwgs)
 
 
 def is_loog_arg(func):
@@ -55,32 +22,34 @@ def is_loog_arg(func):
     return False
 
 
-async def multiple_completions(
-    chats: List[Dict[str, str]],
-    model_type: str = "gpt-3.5-turbo",
-    functions: Dict = [],
-    timeout=30,
-    timeout_async=50,
-    temperature=None,
-    use_logs=True,
+async def create_embeddings(input_txt: str, model_type: str = "text-embedding-ada-002"):
+    response = await openai.Embedding.acreate(
+        input=input_txt,
+        model=model_type,
+    )
+    return response
+
+
+def _func_task(input_txt: str, model_type: str):
+    """Fix issues with arguments passed to different chatGPT models."""
+    return create_embeddings(input_txt, model_type)
+
+
+async def multiple_embeddings(
+    chats: List[str], model_type: str = "text-embedding-ada-002", timeout=30
 ):
     """Full async call to OpenAI with rerun of failed tasks.
 
     Parameters:
-         chats - List of messages, where messages are the same as in openai.ChatCompletion.create
-         model_type - same as in openai.ChatCompletion.create
-         functions - same as in openai.ChatCompletion.create
-         timeout_async - how long to wait for a response from API;
-         timeout - how long to wait before restarting failed and long pending tasks
+         chats - List of inputs, where input is the same as in openai.Embedding.create
+         model_type - same as in openai.Embedding.create
+         functions - same as in openai.Embedding.create
+         timeout - retry timeout in seconds, will restart all failed tasks after the timeout.
 
      Parameters example:
 
-     messages1 = [{'role': 'system',
-                 'content': 'You are a proffessional psychiatrist. Psychiatrists assess user mental and physical symptoms'},
-                 {'role': 'user',
-                 'content': 'Hello World'}]
-     chats = [messages1, messages2, messages3, ...]
-      model_type = "gpt-3.5-turbo"
+     chats = [input_txt1, input_txt2, input_txt3, ...]
+     model_type = "text-embedding-ada-002"
 
     """
 
@@ -90,10 +59,6 @@ async def multiple_completions(
     except:
         nb_loop = None
 
-    if not use_logs:
-        saved_handlers = logger.handlers
-        logger.handlers = []
-
     openai.aiosession.set(ClientSession(loop=nb_loop))
 
     # dictionary with tasks
@@ -101,12 +66,12 @@ async def multiple_completions(
     n_chats = len(chats)
     tasks = {
         asyncio.ensure_future(
-            _func_task(chats[task_id], model_type, functions, temperature), loop=nb_loop
+            _func_task(chats[task_id], model_type), loop=nb_loop
         ): task_id
         for task_id in range(n_chats)
     }
 
-    pending_ids = [task_id for task, task_id in tasks.items()]
+    pending_ids = [task_id for _, task_id in tasks.items()]
 
     num_times_called = 0
     cnt_total_failed = 0
@@ -127,53 +92,39 @@ async def multiple_completions(
                 [task for task in tasks.keys() if not task.done()],
                 loop=nb_loop,
                 return_when=asyncio.ALL_COMPLETED,
-                timeout=timeout_async,
             )
         else:
             finished, pending = await asyncio.wait(
                 [task for task in tasks.keys() if not task.done()],
                 return_when=asyncio.ALL_COMPLETED,
-                timeout=timeout_async,
             )
 
         logger.info(f"finished: {len(finished)}")
         logger.info(f"pending: {len(pending)}")
 
         pending_ids = []
-        cnt_canceled = 0
-        # Add pending tasks to canceled
-        if len(pending) > 0:
-            for task in pending:
-                cnt_canceled += 1
-                task.cancel(msg="canceled by timeout")
-                task_id = tasks.pop(task)
-                pending_ids.append(task_id)
-
         cnt_failed = 0
         stats_exceptions = ExceptionStats()
         for task in finished:
             if task.exception():
                 cnt_failed += 1
-                # saving tasks exceptions for statistic
+
+                # saving tasks exceptions for statistincst
                 stats_exceptions.add_exception(task.exception())
+
+                # replacing failed task with new one
                 task_id = tasks.pop(task)
+                new_task = asyncio.ensure_future(_func_task(chats[task_id], model_type))
+                tasks[new_task] = task_id
                 pending_ids.append(task_id)
 
         cnt_total_failed += cnt_failed
-        logger.info(f"cnt canceled (by timeout): {cnt_canceled}")
         logger.info(f"cnt failed: {cnt_failed}")
 
-        if len(pending_ids) > 0:
+        if cnt_failed > 0:
             stats_exceptions.print_stats()
             logger.info(f"retrying failed tasks in {timeout} seconds")
             time.sleep(timeout)
-
-        for task_id in pending_ids:
-            # replacing failed task with new one
-            new_task = asyncio.ensure_future(
-                _func_task(chats[task_id], model_type, functions)
-            )
-            tasks[new_task] = task_id
 
     await openai.aiosession.get().close()
 
@@ -186,8 +137,5 @@ async def multiple_completions(
 
     # extracting tasks results
     lst_tasks = [task.result() for task in tasks]
-
-    if not use_logs:
-        logger.handlers = saved_handlers
 
     return lst_tasks
