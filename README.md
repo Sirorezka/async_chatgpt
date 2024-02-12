@@ -1,6 +1,8 @@
 ## Description
 Batch async requests to chatgpt completion API with rerun of failed tasks (for example when part of the tasks failed because 'RateLimitError' exception).
 
+![image](https://github.com/Sirorezka/async_chatgpt/assets/10659800/c389a5b7-1d1f-4774-a577-e50e424ee161)
+
 
 ## Prerequisites
 You will need OpenAI account to run this code.
